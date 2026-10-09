@@ -7,6 +7,7 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -333,6 +334,17 @@ function emitirReporte(reporte) {
     for (const r of rooms) inst.to(r).emit('nuevo-reporte', reporte);
   }
 }
+
+// IP local de este PC para que el celular se conecte
+app.get('/api/mi-ip', (req, res) => {
+  const ips = [];
+  for (const nets of Object.values(os.networkInterfaces())) {
+    for (const n of nets || []) {
+      if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
+    }
+  }
+  res.json({ ips, http: ips.map(ip => `http://${ip}:${PORT}/movil.html`) });
+});
 
 // Rutas páginas
 app.get('/', (req, res) => res.redirect('/pc.html'));

@@ -51,7 +51,11 @@
     </details>
   </div>
   <div id="dash" style="display:none">
-  <p>Comparte tu nombre de cuenta con los celulares: ellos escriben <b id="miNombre"></b> para pedirte autorización.<br>Los reportes llegan solos aquí.</p>
+  <p>Tu cuenta PC es <b id="miNombre"></b>: los celulares la escriben para pedirte autorización.<br>Los reportes llegan solos aquí.</p>
+  <div id="ipBox" style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:14px;padding:12px;margin-bottom:12px;font-size:14px">
+    📱 En el celular abre: <b id="ipLink">cargando...</b><br>
+    <small>Esa misma dirección va en ⚙️ Servidor del móvil. Ambos en el mismo WiFi.</small>
+  </div>
   <div class="pair">
     <button id="exportar" class="sec">⬇️ Exportar CSV</button>
     <button id="logoutBtn" class="sec">Salir</button>
@@ -123,6 +127,7 @@ function pintarSesion(me) {
     socket.emit('auth', localStorage.getItem('token-pc'));
     cargarHistorial();
     cargarSolicitudes();
+    mostrarIP();
   } else {
     codigoShow.textContent = '—';
     estadoEl.textContent = 'Entra con tu cuenta PC.';
@@ -257,6 +262,15 @@ async function cargarSolicitudes(){
 async function resolver(id, accion){
   await api('/api/solicitudes/' + id + '/' + accion, { method: 'POST' });
   cargarSolicitudes();
+}
+async function mostrarIP(){
+  try{
+    const r = await api('/api/mi-ip');
+    const d = await r.json();
+    const link = document.getElementById('ipLink');
+    if(d.http && d.http.length) link.textContent = d.http.join('  o  ');
+    else link.textContent = 'no detectada (usa ipconfig)';
+  }catch(e){}
 }
 
 socket.on('nueva-solicitud', (s) => {
