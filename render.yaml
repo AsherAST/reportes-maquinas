@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: reportes-maquinas
-    env: node
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: PORT
-        value: 3000
