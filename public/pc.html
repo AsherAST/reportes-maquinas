@@ -72,10 +72,14 @@
 </div>
 
 <script>
+// URL fija de la nube (igual que en movil.html). Vacío = detectar automáticamente.
+const DEFAULT_SERVER = '';
 function getServer(){
   let s = (localStorage.getItem('serverUrl-pc') || '').trim();
-  if(!s) return '';
-  return s.replace(/\/$/, '');
+  if(s) return s.replace(/\/$/, '');
+  if(/^https?:\/\//i.test(location.origin)) return '';
+  if(DEFAULT_SERVER) return DEFAULT_SERVER;
+  return '';
 }
 const socket = io(getServer() || undefined);
 const serverUrlEl = document.getElementById('serverUrl');

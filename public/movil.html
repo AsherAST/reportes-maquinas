@@ -34,9 +34,12 @@
   <h1>🎤 Reporte de Máquinas</h1>
   <p class="sub">Presiona el botón, habla y se transcribe. Al finalizar se envía solo al PC.</p>
 
-  <label>🌐 Servidor (URL de la nube o tu PC)</label>
-  <input id="serverUrl" placeholder="https://tu-app.onrender.com" inputmode="url" />
-  <div style="font-size:11px;color:#64748b;margin-top:4px">Pégala una vez y queda guardada. Así funciona fuera de tu WiFi.</div>
+  <details style="margin-bottom:8px">
+    <summary style="font-size:12px;color:#64748b;cursor:pointer">⚙️ Servidor (avanzado: normalmente no hay que tocarlo)</summary>
+    <label>🌐 Servidor</label>
+    <input id="serverUrl" placeholder="Automático" inputmode="url" />
+    <div style="font-size:11px;color:#64748b;margin-top:4px">Solo cámbialo si te lo indican. Vacío = automático.</div>
+  </details>
 
   <div class="card" id="authCard">
     <div style="font-weight:800;margin-bottom:8px">👤 Cuenta de celular</div>
@@ -87,12 +90,16 @@
 
 <script>
 // Servidor configurable: funciona en WiFi local o en la nube (para usar fuera de red)
+// URL fija de la nube: cuando se despliegue, se pone aquí y nadie escribe IPs.
+// Ej: 'https://reportes-maquinas.onrender.com' (vacío = detectar automáticamente)
+const DEFAULT_SERVER = '';
 function esHttp(u){ return /^https?:\/\//i.test(u || ''); }
 function getServer(){
   let s = (localStorage.getItem('serverUrl') || '').trim();
   if(s) return s.replace(/\/$/, '');
-  // En el APK (capacitor/file) no hay origin válido: hay que configurarlo
+  // En el APK (capacitor/file) no hay origin válido: usa la nube fija
   if(esHttp(location.origin)) return location.origin.replace(/\/$/, '');
+  if(DEFAULT_SERVER) return DEFAULT_SERVER;
   return '';
 }
 let SERVER = getServer();
@@ -105,7 +112,7 @@ function socketEmit(ev, dato){
 }
 const serverUrlEl = document.getElementById('serverUrl');
 serverUrlEl.value = localStorage.getItem('serverUrl') || '';
-serverUrlEl.placeholder = esHttp(location.origin) ? location.origin : 'https://tu-app.onrender.com o http://IP-PC:3000';
+serverUrlEl.placeholder = esHttp(location.origin) ? location.origin : (DEFAULT_SERVER || 'Automático');
 serverUrlEl.addEventListener('change', () => {
   let v = serverUrlEl.value.trim().replace(/\/$/, '');
   if(v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
@@ -130,8 +137,8 @@ function api(path, opts = {}) {
 }
 function errServidor(e){
   return (e && e.message === 'SIN_SERVIDOR')
-    ? 'Primero configura el campo Servidor (URL nube o http://IP-PC:3000).'
-    : 'Sin conexión al servidor. Revisa la URL y tu internet.';
+    ? 'No encuentro el servidor. Abre la app desde la nube o configura el Servidor en ⚙️.'
+    : 'Sin conexión al servidor. Revisa tu internet.';
 }
 async function sesion() {
   const t = localStorage.getItem('token');
