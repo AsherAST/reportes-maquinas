@@ -36,9 +36,12 @@
 
   <details style="margin-bottom:8px">
     <summary style="font-size:12px;color:#64748b;cursor:pointer">⚙️ Servidor (avanzado: normalmente no hay que tocarlo)</summary>
+    <div style="font-size:12px;color:#93c5fd;margin:6px 0">Activo: <b id="serverActivo">—</b></div>
     <label>🌐 Servidor</label>
     <input id="serverUrl" placeholder="Automático" inputmode="url" />
     <div style="font-size:11px;color:#64748b;margin-top:4px">Solo cámbialo si te lo indican. Vacío = automático.</div>
+    <button id="probarBtn" style="margin-top:8px;padding:10px 14px;border-radius:10px;border:1px solid #38bdf8;background:transparent;color:#fff;font-weight:700;cursor:pointer">🔍 Probar conexión</button>
+    <div id="probarInfo" style="font-size:12px;color:#facc15;margin-top:6px"></div>
   </details>
 
   <div class="card" id="authCard">
@@ -121,6 +124,21 @@ serverUrlEl.addEventListener('change', () => {
   if(v){ alert('Servidor guardado. Recarga la página para conectar.'); location.reload(); }
 });
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
+document.getElementById('serverActivo').textContent = getServer() || '(sin configurar)';
+document.getElementById('probarBtn').onclick = async () => {
+  const info = document.getElementById('probarInfo');
+  const base = getServer();
+  if(!base){ info.textContent = '❌ No hay servidor configurado. Escribe la URL del PC.'; return; }
+  info.textContent = 'Probando ' + base + ' ...';
+  try{
+    const r = await fetch(base + '/api/auth/me', { method: 'GET' });
+    info.textContent = r.status === 401
+      ? '✅ Servidor responde (' + base + '). Ya puedes crear/entrar.'
+      : '✅ Servidor responde (código ' + r.status + ').';
+  }catch(e){
+    info.textContent = '❌ No llega a ' + base + '. Revisa: 1) .exe abierto en el PC, 2) mismo WiFi, 3) firewall del PC permite puerto 3000.';
+  }
+};
 const maquinaEl = document.getElementById('maquina');
 const userEl = document.getElementById('user');
 const passEl = document.getElementById('pass');
