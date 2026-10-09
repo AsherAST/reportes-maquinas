@@ -1,0 +1,20 @@
+{
+  "name": "reportes-maquinas-mvp",
+  "version": "1.0.0",
+  "description": "App reportes de máquinas por voz: móvil -> PC apareado",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "cap:init": "cap init",
+    "cap:sync": "cap sync",
+    "cap:open": "cap open android"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "cors": "^2.8.5",
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/cli": "^6.1.0",
+    "@capacitor/android": "^6.1.0"
+  }
+}

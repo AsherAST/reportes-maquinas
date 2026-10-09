@@ -1,0 +1,8 @@
+node_modules/
+reportes.json
+*.log
+key.pem
+cert.pem
+android/app/build/
+android/.gradle/
+.DS_Store

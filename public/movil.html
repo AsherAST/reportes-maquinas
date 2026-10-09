@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Reportes Máquinas - Móvil</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>if(!window.io){document.write('<script src="/socket.io/socket.io.js"><\/script>')}</script>
+<style>
+  *{box-sizing:border-box} body{font-family:system-ui,Arial,sans-serif;margin:0;background:#0f172a;color:#fff;min-height:100vh}
+  .wrap{max-width:480px;margin:0 auto;padding:16px;padding-bottom:40px}
+  h1{font-size:20px;margin:8px 0} p.sub{color:#94a3b8;font-size:13px;margin-top:0}
+  label{font-size:13px;color:#cbd5e1;display:block;margin:12px 0 4px}
+  input,textarea,select{width:100%;padding:12px;border-radius:12px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:16px}
+  textarea{min-height:140px;resize:vertical}
+  #micBtn{width:100%;margin-top:16px;padding:22px;border-radius:20px;border:none;font-size:19px;font-weight:800;background:#22c55e;color:#052e16;cursor:pointer}
+  #micBtn.escuchando{background:#ef4444;color:#fff;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.7}}
+  #enviarBtn{width:100%;margin-top:12px;padding:18px;border-radius:16px;border:none;font-size:17px;font-weight:800;background:#3b82f6;color:#fff;cursor:pointer}
+  #enviarBtn:disabled{opacity:.4}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:12px;margin-top:12px}
+  #estado{font-size:14px;color:#facc15;min-height:20px;margin-top:8px}
+  #fechaHora{font-size:13px;color:#94a3b8}
+  .row{display:flex;gap:8px} .row button{flex:1}
+  .sec{font-size:12px;color:#64748b;margin-top:16px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎤 Reporte de Máquinas</h1>
+  <p class="sub">Presiona el botón, habla y se transcribe. Al finalizar se envía solo al PC.</p>
+
+  <label>🌐 Servidor (URL de la nube o tu PC)</label>
+  <input id="serverUrl" placeholder="https://tu-app.onrender.com" inputmode="url" />
+  <div style="font-size:11px;color:#64748b;margin-top:4px">Pégala una vez y queda guardada. Así funciona fuera de tu WiFi.</div>
+
+  <label>Código de apareamiento (igual que en el PC)</label>
+  <input id="codigo" placeholder="Ej: PLANTA-123" value="" maxlength="20" />
+
+  <div class="row">
+    <div style="flex:1">
+      <label>Máquina / Equipo</label>
+      <input id="maquina" placeholder="Ej: Torno 3, Compresor..." />
+    </div>
+    <div style="flex:1">
+      <label>Operario</label>
+      <input id="operario" placeholder="Tu nombre" />
+    </div>
+  </div>
+
+  <label>Transcripción</label>
+  <textarea id="texto" placeholder="Aquí aparecerá lo que hables... también puedes escribir."></textarea>
+  <div id="fechaHora"></div>
+
+  <button id="permisoBtn" style="width:100%;margin-top:12px;padding:14px;border-radius:14px;border:1px solid #38bdf8;background:#0c4a6e;color:#fff;font-size:15px;font-weight:700;cursor:pointer">🔓 1. ACTIVAR MICRÓFONO (toca aquí primero)</button>
+  <button id="micBtn">🎙️ 2. HABLAR</button>
+  <div id="estado">Toca el botón para empezar.</div>
+
+  <div class="card">
+    <button id="enviarBtn">✅ FINALIZAR Y ENVIAR AL PC</button>
+    <div style="font-size:12px;color:#94a3b8;margin-top:8px">Se envía con fecha y hora automáticamente.</div>
+  </div>
+
+  <div class="sec">Funciona mejor en Android con Chrome. Permite el micrófono.</div>
+</div>
+
+<script>
+// Servidor configurable: funciona en WiFi local o en la nube (para usar fuera de red)
+function getServer(){
+  let s = (localStorage.getItem('serverUrl') || '').trim();
+  if(!s) s = location.origin;
+  return s.replace(/\/$/, '');
+}
+let SERVER = getServer();
+let socket;
+try { socket = io(SERVER); } catch(e){ socket = io(); }
+const serverUrlEl = document.getElementById('serverUrl');
+serverUrlEl.value = localStorage.getItem('serverUrl') || '';
+serverUrlEl.placeholder = location.origin;
+serverUrlEl.addEventListener('change', () => {
+  let v = serverUrlEl.value.trim().replace(/\/$/, '');
+  if(v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
+  serverUrlEl.value = v;
+  localStorage.setItem('serverUrl', v);
+  if(v){ alert('Servidor guardado. Recarga la página para conectar a la nube.'); location.reload(); }
+});
+if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
+const codigoEl = document.getElementById('codigo');
+const maquinaEl = document.getElementById('maquina');
+const operarioEl = document.getElementById('operario');
+const textoEl = document.getElementById('texto');
+const micBtn = document.getElementById('micBtn');
+const permisoBtn = document.getElementById('permisoBtn');
+const enviarBtn = document.getElementById('enviarBtn');
+const estadoEl = document.getElementById('estado');
+const fechaEl = document.getElementById('fechaHora');
+
+// recordar código
+codigoEl.value = localStorage.getItem('codigo') || '';
+maquinaEl.value = localStorage.getItem('maquina') || '';
+operarioEl.value = localStorage.getItem('operario') || '';
+codigoEl.addEventListener('change', () => {
+  localStorage.setItem('codigo', codigoEl.value.toUpperCase().trim());
+  unirse();
+});
+function unirse(){
+  const c = codigoEl.value.toUpperCase().trim();
+  if(c) socket.emit('unirse', c);
+}
+socket.on('connect', unirse);
+
+function actualizarFecha(){
+  fechaEl.textContent = '🕒 ' + new Date().toLocaleString('es-CO',{dateStyle:'full', timeStyle:'short'});
+}
+setInterval(actualizarFecha, 10000); actualizarFecha();
+
+// --- Permiso explícito de micrófono (esto hace que Chrome pregunte) ---
+let audioStream = null;
+async function pedirPermisoMicro(){
+  estadoEl.textContent = 'Pidiendo permiso de micrófono... dale Permitir';
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      estadoEl.textContent = '⚠️ Este origen http bloquea el micro. Activa chrome://flags/#unsafely-treat-insecure-origin-as-secure con http://' + location.host + ' o usa https.';
+      alert('Tu Chrome bloquea el micro por ser página http. Haz el paso del flag que te expliqué, o dime y te lo pongo en https.');
+      return false;
+    }
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // lo detenemos enseguida, solo era para que pida permiso y quede guardado
+    audioStream.getTracks().forEach(t => t.stop());
+    estadoEl.textContent = '✅ Micrófono permitido. Ahora presiona 2. HABLAR';
+    permisoBtn.textContent = '✅ MICRÓFONO ACTIVADO';
+    permisoBtn.style.background = '#14532d';
+    return true;
+  }catch(e){
+    console.log(e);
+    if((''+e.name).includes('NotAllowed') || (''+e.message).includes('denied')){
+      estadoEl.textContent = '❌ Bloqueaste el micro. Toca "No es segura" arriba > Permisos > Micrófono > Permitir y recarga.';
+      alert('Bloqueaste el micrófono. Toca "No es segura" arriba > Permisos > Micrófono > Permitir.');
+    } else if((''+e.name).includes('NotFound') || (''+e.name).includes('Overconstrained')){
+      estadoEl.textContent = '❌ No se encontró micrófono en este equipo.';
+    } else {
+      estadoEl.textContent = '❌ No se pudo usar el micro (' + e.name + '). Si es http, activa el flag insecure-origin o usa https.';
+    }
+    return false;
+  }
+}
+permisoBtn.addEventListener('click', pedirPermisoMicro);
+
+// --- Reconocimiento de voz (sin duplicados) ---
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, escuchando = false;
+let baseInicial = '', acumuladoSesiones = '';
+
+function limpiarRepeticiones(texto){
+  // quita palabras y frases repetidas consecutivas: "motor motor" -> "motor",
+  // "falta aceite falta aceite" -> "falta aceite"
+  let palabras = texto.trim().split(/\s+/);
+  if(palabras.length < 2) return texto.trim();
+  let out = [];
+  for(let i = 0; i < palabras.length; i++){
+    let duplicado = false;
+    // busca si las siguientes N palabras repiten las N anteriores (N de 8 a 1)
+    for(let n = 8; n >= 1; n--){
+      if(out.length >= n && i + n <= palabras.length){
+        const prev = out.slice(out.length - n).join(' ').toLowerCase();
+        const next = palabras.slice(i, i + n).join(' ').toLowerCase();
+        if(prev === next){ i += n - 1; duplicado = true; break; }
+      }
+    }
+    if(!duplicado) out.push(palabras[i]);
+  }
+  return out.join(' ');
+}
+
+if(!SR){
+  estadoEl.textContent = '⚠️ Este navegador no soporta dictado por voz. Usa Chrome en Android o escribe manual.';
+} else {
+  rec = new SR();
+  rec.lang = 'es-ES';
+  rec.continuous = true;
+  rec.interimResults = true;
+
+  rec.onresult = (e) => {
+    // Reconstruye TODA la sesión desde cero (no suma incremental -> no duplica)
+    let finalSesion = '', interim = '';
+    for(let i = 0; i < e.results.length; i++){
+      const t = e.results[i][0].transcript.trim();
+      if(e.results[i].isFinal) finalSesion += t + ' ';
+      else interim += t + ' ';
+    }
+    const limpio = limpiarRepeticiones(baseInicial + ' ' + acumuladoSesiones + ' ' + finalSesion);
+    textoEl.value = limpio.trim();
+    estadoEl.textContent = interim ? 'Escuchando: ...' + interim.trim().slice(-60) : 'Escuchando... habla pausado';
+  };
+  rec.onerror = (e) => {
+    if(e.error === 'no-speech' || e.error === 'audio-capture') return; // ignora pausas
+    estadoEl.textContent = 'Error mic: ' + e.error + '. Revisa permiso de micrófono.';
+    detener();
+  };
+  rec.onend = () => {
+    if(escuchando){
+      // consolida lo dicho en esta sesión y reinicia limpio
+      acumuladoSesiones = textoEl.value.slice(baseInicial.length).trim() + ' ';
+      try{ rec.start(); }catch{}
+    }
+  };
+}
+
+async function iniciar(){
+  if(!SR) return;
+  const c = codigoEl.value.trim();
+  if(!c){ alert('Escribe el código de apareamiento primero'); codigoEl.focus(); return; }
+  // 1. pide permiso explícito siempre antes de escuchar -> esto obliga a que Chrome pregunte
+  const ok = await pedirPermisoMicro();
+  if(!ok) return;
+  localStorage.setItem('codigo', c.toUpperCase());
+  localStorage.setItem('maquina', maquinaEl.value);
+  localStorage.setItem('operario', operarioEl.value);
+  baseInicial = textoEl.value || '';
+  acumuladoSesiones = '';
+  try{ rec.start(); escuchando = true;
+    micBtn.classList.add('escuchando'); micBtn.textContent = '⏹️ TOCA PARA DETENER';
+    estadoEl.textContent = 'Escuchando... habla de la máquina';
+    actualizarFecha();
+  }catch(e){}
+}
+function detener(){
+  escuchando = false;
+  try{ rec && rec.stop(); }catch{}
+  micBtn.classList.remove('escuchando'); micBtn.textContent = '🎙️ 2. HABLAR';
+  if(textoEl.value.trim()){
+    textoEl.value = limpiarRepeticiones(textoEl.value);
+    estadoEl.textContent = 'Pausado. Revisa el texto (ya limpié repeticiones) o finaliza.';
+  }
+}
+
+micBtn.addEventListener('click', () => { escuchando ? detener() : iniciar(); });
+
+// --- Enviar ---
+enviarBtn.addEventListener('click', async () => {
+  detener();
+  const codigo = codigoEl.value.toUpperCase().trim();
+  let texto = limpiarRepeticiones(textoEl.value.trim());
+  textoEl.value = texto;
+  if(!codigo){ alert('Falta código de apareamiento'); return; }
+  if(!texto){ alert('No hay texto para enviar. Habla o escribe primero.'); return; }
+  enviarBtn.disabled = true; enviarBtn.textContent = 'Enviando...';
+  try{
+    const r = await fetch(getServer() + '/api/reportes', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ codigo, maquina: maquinaEl.value, operario: operarioEl.value, texto })
+    });
+    const data = await r.json();
+    if(data.ok){
+      estadoEl.textContent = '✅ Enviado al PC a las ' + data.reporte.fechaHora;
+      textoEl.value = ''; baseInicial = ''; acumuladoSesiones = '';
+      actualizarFecha();
+      navigator.vibrate && navigator.vibrate(100);
+    } else alert('Error: ' + (data.error||'no se pudo enviar'));
+  }catch(e){ alert('Sin conexión al servidor. Revisa WiFi/internet.'); }
+  enviarBtn.disabled = false; enviarBtn.textContent = '✅ FINALIZAR Y ENVIAR AL PC';
+});
+</script>
+</body>
+</html>
