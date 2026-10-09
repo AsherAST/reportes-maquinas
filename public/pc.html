@@ -43,6 +43,7 @@
       <button id="loginBtn">Entrar</button>
       <button id="regBtn" class="sec">Crear cuenta PC</button>
     </div>
+    <div id="loginErr" style="color:#dc2626;font-size:13px;min-height:18px"></div>
     <details style="margin-top:8px;font-size:13px;color:#64748b">
       <summary style="cursor:pointer">⚙️ Servidor (solo si usas la nube)</summary>
       <input id="serverUrl" placeholder="Por defecto: esta misma página" style="width:100%;margin-top:6px" />
@@ -123,20 +124,44 @@ function pintarSesion(me) {
     estadoEl.textContent = 'Entra con tu cuenta PC.';
   }
 }
+function loginErr(m){ document.getElementById('loginErr').textContent = m || ''; }
+function credenciales(){
+  const u = document.getElementById('user').value.toLowerCase().trim();
+  const p = document.getElementById('pass').value;
+  if(!u || !p){ loginErr('Escribe usuario y clave primero.'); return null; }
+  if(!/^[a-z0-9._-]{3,20}$/.test(u)){ loginErr('Usuario inválido (3-20: letras, números, . _ -).'); return null; }
+  loginErr('');
+  return { username: u, password: p };
+}
+function botonesLogin(off){
+  document.getElementById('loginBtn').disabled = off;
+  document.getElementById('regBtn').disabled = off;
+}
 document.getElementById('loginBtn').onclick = async () => {
-  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: document.getElementById('user').value, password: document.getElementById('pass').value }) });
-  const d = await r.json();
-  if (!d.token) return alert(d.error || 'No se pudo entrar');
-  if (d.role !== 'pc') return alert('Esa es cuenta de celular. Entra con una cuenta PC.');
-  localStorage.setItem('token-pc', d.token);
-  location.reload();
+  const c = credenciales(); if(!c) return;
+  botonesLogin(true);
+  try{
+    const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(c) });
+    const d = await r.json();
+    if (!d.token){ loginErr(d.error || 'No se pudo entrar'); return; }
+    if (d.role !== 'pc'){ loginErr('Esa es cuenta de celular. Entra con una cuenta PC.'); return; }
+    localStorage.setItem('token-pc', d.token);
+    location.reload();
+  }catch(e){ loginErr('Sin conexión al servidor.'); }
+  finally { botonesLogin(false); }
 };
 document.getElementById('regBtn').onclick = async () => {
-  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: document.getElementById('user').value, password: document.getElementById('pass').value, role: 'pc' }) });
-  const d = await r.json();
-  if (!d.token) return alert(d.error || 'No se pudo crear');
-  localStorage.setItem('token-pc', d.token);
-  location.reload();
+  const c = credenciales(); if(!c) return;
+  if(c.password.length < 4){ loginErr('Clave mínima 4 caracteres.'); return; }
+  botonesLogin(true);
+  try{
+    const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: c.username, password: c.password, role: 'pc' }) });
+    const d = await r.json();
+    if (!d.token){ loginErr(d.error || 'No se pudo crear'); return; }
+    localStorage.setItem('token-pc', d.token);
+    location.reload();
+  }catch(e){ loginErr('Sin conexión al servidor.'); }
+  finally { botonesLogin(false); }
 };
 document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token-pc'); location.reload(); };
 

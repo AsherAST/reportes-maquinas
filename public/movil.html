@@ -49,6 +49,7 @@
         <button id="loginBtn" style="padding:12px;border-radius:10px;border:none;background:#22c55e;color:#052e16;font-weight:800;cursor:pointer">Entrar</button>
         <button id="regBtn" style="padding:12px;border-radius:10px;border:1px solid #38bdf8;background:transparent;color:#fff;font-weight:700;cursor:pointer">Crear cuenta</button>
       </div>
+      <div id="loginErr" style="color:#fca5a5;font-size:13px;min-height:18px;margin-top:6px"></div>
     </div>
     <div id="authInfo" style="display:none;font-size:14px"></div>
   </div>
@@ -164,20 +165,36 @@ function pintarSesion(me) {
   socket.emit('auth', localStorage.getItem('token'));
 }
 function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function loginErr(m){ document.getElementById('loginErr').textContent = m || ''; }
+function credenciales(){
+  const u = userEl.value.toLowerCase().trim();
+  const p = passEl.value;
+  if(!u || !p){ loginErr('Escribe usuario y clave primero.'); return null; }
+  if(!/^[a-z0-9._-]{3,20}$/.test(u)){ loginErr('Usuario inválido (3-20: letras, números, . _ -).'); return null; }
+  loginErr('');
+  return { username: u, password: p };
+}
 document.getElementById('loginBtn').onclick = async () => {
-  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: userEl.value, password: passEl.value }) });
-  const d = await r.json();
-  if (!d.ok && !d.token) return alert(d.error || 'No se pudo entrar');
-  if (d.role !== 'movil') return alert('Esa es cuenta de PC. Crea una cuenta de celular.');
-  localStorage.setItem('token', d.token);
-  location.reload();
+  const c = credenciales(); if(!c) return;
+  try{
+    const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify(c) });
+    const d = await r.json();
+    if (!d.token){ loginErr(d.error || 'No se pudo entrar'); return; }
+    if (d.role !== 'movil'){ loginErr('Esa es cuenta de PC. Crea una cuenta de celular.'); return; }
+    localStorage.setItem('token', d.token);
+    location.reload();
+  }catch(e){ loginErr('Sin conexión al servidor.'); }
 };
 document.getElementById('regBtn').onclick = async () => {
-  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: userEl.value, password: passEl.value, role: 'movil' }) });
-  const d = await r.json();
-  if (!d.token) return alert(d.error || 'No se pudo crear');
-  localStorage.setItem('token', d.token);
-  location.reload();
+  const c = credenciales(); if(!c) return;
+  if(c.password.length < 4){ loginErr('Clave mínima 4 caracteres.'); return; }
+  try{
+    const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: c.username, password: c.password, role: 'movil' }) });
+    const d = await r.json();
+    if (!d.token){ loginErr(d.error || 'No se pudo crear'); return; }
+    localStorage.setItem('token', d.token);
+    location.reload();
+  }catch(e){ loginErr('Sin conexión al servidor.'); }
 };
 document.getElementById('pairBtn').onclick = async () => {
   const r = await api('/api/pair', { method: 'POST', body: JSON.stringify({ pcUsername: pcNameEl.value }) });
