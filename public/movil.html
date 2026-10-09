@@ -135,8 +135,32 @@ function pintarSesion(me) {
   info.innerHTML = `✅ <b>${esc(me.username)}</b> <button id="logoutBtn" style="margin-left:8px;background:none;border:1px solid #64748b;color:#94a3b8;border-radius:8px;padding:2px 8px;cursor:pointer">salir</button>`;
   document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token'); location.reload(); };
   const pi = document.getElementById('pairInfo');
-  if (me.pairedPc) { pi.textContent = '🔗 Apareado con PC: ' + me.pairedPc; pcNameEl.value = me.pairedPc; }
-  else pi.textContent = 'Sin aparear. Escribe la cuenta PC y aparea.';
+  const pairBtn = document.getElementById('pairBtn');
+  if (me.pairedPc) {
+    pi.innerHTML = '✅ <b>Autorizado por PC: ' + esc(me.pairedPc) + '</b>. Ya puedes enviar reportes.';
+    pcNameEl.value = me.pairedPc; pcNameEl.disabled = true;
+    pairBtn.textContent = 'Desaparearse';
+    pairBtn.style.background = '#7f1d1d';
+    pairBtn.onclick = async () => {
+      if(!confirm('Desaparearte de ' + me.pairedPc + '?')) return;
+      await api('/api/pair', { method: 'DELETE' });
+      location.reload();
+    };
+  }
+  else if (me.pendingPc) {
+    pi.innerHTML = '⏳ <b>Solicitud enviada a ' + esc(me.pendingPc) + '</b>. Espera a que el PC la acepte.';
+    pcNameEl.value = me.pendingPc;
+    pairBtn.textContent = 'Cancelar solicitud';
+    pairBtn.style.background = '#713f12';
+    pairBtn.onclick = async () => {
+      await api('/api/pair', { method: 'DELETE' });
+      location.reload();
+    };
+  }
+  else {
+    pi.textContent = 'Sin aparear. Escribe la cuenta PC y envía solicitud.';
+    pcNameEl.disabled = false;
+  }
   socket.emit('auth', localStorage.getItem('token'));
 }
 function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
@@ -158,10 +182,16 @@ document.getElementById('regBtn').onclick = async () => {
 document.getElementById('pairBtn').onclick = async () => {
   const r = await api('/api/pair', { method: 'POST', body: JSON.stringify({ pcUsername: pcNameEl.value }) });
   const d = await r.json();
-  if (!d.ok) return alert(d.error || 'No se pudo aparear');
-  alert('Apareado con PC: ' + d.pairedPc);
+  if (!d.ok) return alert(d.error || 'No se pudo enviar la solicitud');
+  if (d.estado === 'aceptada') alert('Apareado con PC: ' + d.pairedPc);
+  else alert('Solicitud enviada a ' + d.pc + '. Espera a que el PC la acepte.');
   location.reload();
 };
+socket.on('solicitud-resuelta', async () => {
+  const me = await sesion();
+  if (me && me.pairedPc) { alert('✅ El PC ' + me.pairedPc + ' aceptó tu solicitud. Ya puedes enviar reportes.'); }
+  location.reload();
+});
 socket.on('connect', async () => {
   const me = await sesion();
   pintarSesion(me);
@@ -278,7 +308,11 @@ async function iniciar(){
   if(!SR) return;
   const me = await sesion();
   if(!me){ alert('Entra a tu cuenta primero'); return; }
-  if(!me.pairedPc){ alert('Aparea con una cuenta PC primero (ej: oficina-1)'); pcNameEl.focus(); return; }
+  if(!me.pairedPc){
+    if(me.pendingPc) alert('Tu solicitud a ' + me.pendingPc + ' aún no fue aceptada. Espera la aprobación del PC.');
+    else { alert('Envía solicitud a una cuenta PC primero'); pcNameEl.focus(); }
+    return;
+  }
   // 1. pide permiso explícito siempre antes de escuchar -> esto obliga a que Chrome pregunte
   const ok = await pedirPermisoMicro();
   if(!ok) return;

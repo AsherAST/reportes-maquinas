@@ -50,10 +50,18 @@
     </details>
   </div>
   <div id="dash" style="display:none">
-  <p>Comparte tu nombre de cuenta con los celulares: ellos escriben <b id="miNombre"></b> al aparearse.<br>Los reportes llegan solos aquí.</p>
+  <p>Comparte tu nombre de cuenta con los celulares: ellos escriben <b id="miNombre"></b> para pedirte autorización.<br>Los reportes llegan solos aquí.</p>
   <div class="pair">
     <button id="exportar" class="sec">⬇️ Exportar CSV</button>
     <button id="logoutBtn" class="sec">Salir</button>
+  </div>
+  <div id="solicBox" style="background:#fffbeb;border:1px solid #fcd34d;border-radius:14px;padding:12px;margin-bottom:12px;display:none">
+    <div style="font-weight:800">🔔 Solicitudes de celulares (<span id="solCount">0</span>)</div>
+    <div id="solLista"></div>
+  </div>
+  <div id="movilesBox" style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px;margin-bottom:12px">
+    <div style="font-weight:800">📱 Celulares autorizados (<span id="movCount">0</span>)</div>
+    <div id="movLista" style="font-size:14px;color:#475569">Ninguno aún.</div>
   </div>
   <div id="estado">Sin conectar</div>
   <div class="top"><h2 style="margin:8px 0">Reportes recibidos (<span id="count">0</span>)</h2></div>
@@ -109,6 +117,7 @@ function pintarSesion(me) {
     estadoEl.textContent = '✅ Conectado como ' + me.username + ' — esperando reportes...';
     socket.emit('auth', localStorage.getItem('token-pc'));
     cargarHistorial();
+    cargarSolicitudes();
   } else {
     codigoShow.textContent = '—';
     estadoEl.textContent = 'Entra con tu cuenta PC.';
@@ -172,6 +181,62 @@ function pintar(rep, esNuevo=false){
 
 function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
+async function cargarSolicitudes(){
+  if(!YO) return;
+  try{
+    const r = await api('/api/solicitudes');
+    const data = await r.json();
+    const pend = data.filter(s => s.estado === 'pendiente');
+    const autores = [...new Set(data.filter(s => s.estado === 'aceptada').map(s => s.movil))];
+    // bandeja
+    const box = document.getElementById('solicBox');
+    const sl = document.getElementById('solLista');
+    document.getElementById('solCount').textContent = pend.length;
+    if(!pend.length){ box.style.display = 'none'; }
+    else {
+      box.style.display = 'block';
+      sl.innerHTML = '';
+      pend.forEach(s => {
+        const d = document.createElement('div');
+        d.style.cssText = 'display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap';
+        d.innerHTML = `📱 <b>${esc(s.movil)}</b> <small>${esc(s.fechaHora)}</small>`;
+        const ok = document.createElement('button'); ok.textContent = '✅ Aceptar';
+        ok.onclick = () => resolver(s.id, 'aceptar');
+        const no = document.createElement('button'); no.textContent = '❌ Rechazar'; no.className = 'sec';
+        no.onclick = () => resolver(s.id, 'rechazar');
+        d.append(ok, no); sl.append(d);
+      });
+    }
+    // autorizados
+    document.getElementById('movCount').textContent = autores.length;
+    const ml = document.getElementById('movLista');
+    ml.innerHTML = autores.length ? '' : 'Ninguno aún.';
+    autores.forEach(m => {
+      const d = document.createElement('div');
+      d.style.cssText = 'display:flex;gap:8px;align-items:center;margin:4px 0';
+      d.innerHTML = `✅ <b>${esc(m)}</b>`;
+      const q = document.createElement('button'); q.textContent = 'Quitar'; q.className = 'sec'; q.style.cssText = 'padding:4px 10px;font-size:12px';
+      q.onclick = async () => {
+        if(!confirm('Quitar a ' + m + '? Dejará de poder enviarte reportes.')) return;
+        await api('/api/pair?movil=' + encodeURIComponent(m), { method: 'DELETE' });
+        cargarSolicitudes();
+      };
+      d.append(q); ml.append(d);
+    });
+  }catch(e){}
+}
+async function resolver(id, accion){
+  await api('/api/solicitudes/' + id + '/' + accion, { method: 'POST' });
+  cargarSolicitudes();
+}
+
+socket.on('nueva-solicitud', (s) => {
+  cargarSolicitudes();
+  estadoEl.textContent = '🔔 Nueva solicitud de ' + s.movil + ' — acéptala o recházala';
+  try{ new Audio('https://actions.google.com/sounds/v1/alarms/beep_short.ogg').play(); }catch{}
+});
+socket.on('solicitud-resuelta', () => { cargarSolicitudes(); });
+
 socket.on('connect', async () => { const me = await sesion(); pintarSesion(me); });
 socket.on('nuevo-reporte', (rep) => {
   if(!YO || rep.para !== YO.username) return;
@@ -193,7 +258,7 @@ document.getElementById('exportar').onclick = async () => {
   a.download = 'reportes-'+YO.username+'.csv'; a.click();
 };
 sesion().then(pintarSesion);
-setInterval(cargarHistorial, 5000);
+setInterval(() => { cargarHistorial(); cargarSolicitudes(); }, 5000);
 </script>
 </body>
 </html>
