@@ -87,23 +87,31 @@
 
 <script>
 // Servidor configurable: funciona en WiFi local o en la nube (para usar fuera de red)
+function esHttp(u){ return /^https?:\/\//i.test(u || ''); }
 function getServer(){
   let s = (localStorage.getItem('serverUrl') || '').trim();
-  if(!s) s = location.origin;
-  return s.replace(/\/$/, '');
+  if(s) return s.replace(/\/$/, '');
+  // En el APK (capacitor/file) no hay origin válido: hay que configurarlo
+  if(esHttp(location.origin)) return location.origin.replace(/\/$/, '');
+  return '';
 }
 let SERVER = getServer();
-let socket;
-try { socket = io(SERVER); } catch(e){ socket = io(); }
+let socket = null;
+if(SERVER && esHttp(SERVER) && window.io){
+  try { socket = io(SERVER); } catch(e){ socket = null; }
+}
+function socketEmit(ev, dato){
+  try { if(socket) socket.emit(ev, dato); } catch(e){}
+}
 const serverUrlEl = document.getElementById('serverUrl');
 serverUrlEl.value = localStorage.getItem('serverUrl') || '';
-serverUrlEl.placeholder = location.origin;
+serverUrlEl.placeholder = esHttp(location.origin) ? location.origin : 'https://tu-app.onrender.com o http://IP-PC:3000';
 serverUrlEl.addEventListener('change', () => {
   let v = serverUrlEl.value.trim().replace(/\/$/, '');
   if(v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
   serverUrlEl.value = v;
   localStorage.setItem('serverUrl', v);
-  if(v){ alert('Servidor guardado. Recarga la página para conectar a la nube.'); location.reload(); }
+  if(v){ alert('Servidor guardado. Recarga la página para conectar.'); location.reload(); }
 });
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
 const maquinaEl = document.getElementById('maquina');
@@ -113,10 +121,17 @@ const pcNameEl = document.getElementById('pcName');
 
 // --- Cuentas ---
 function api(path, opts = {}) {
+  const base = getServer();
+  if(!base) return Promise.reject(new Error('SIN_SERVIDOR'));
   opts.headers = Object.assign({}, opts.headers, { 'Content-Type': 'application/json' });
   const t = localStorage.getItem('token');
   if (t) opts.headers['Authorization'] = 'Bearer ' + t;
-  return fetch(getServer() + path, opts);
+  return fetch(base + path, opts);
+}
+function errServidor(e){
+  return (e && e.message === 'SIN_SERVIDOR')
+    ? 'Primero configura el campo Servidor (URL nube o http://IP-PC:3000).'
+    : 'Sin conexión al servidor. Revisa la URL y tu internet.';
 }
 async function sesion() {
   const t = localStorage.getItem('token');
@@ -162,7 +177,7 @@ function pintarSesion(me) {
     pi.textContent = 'Sin aparear. Escribe la cuenta PC y envía solicitud.';
     pcNameEl.disabled = false;
   }
-  socket.emit('auth', localStorage.getItem('token'));
+  socketEmit('auth', localStorage.getItem('token'));
 }
 function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function loginErr(m){ document.getElementById('loginErr').textContent = m || ''; }
@@ -183,7 +198,7 @@ document.getElementById('loginBtn').onclick = async () => {
     if (d.role !== 'movil'){ loginErr('Esa es cuenta de PC. Crea una cuenta de celular.'); return; }
     localStorage.setItem('token', d.token);
     location.reload();
-  }catch(e){ loginErr('Sin conexión al servidor.'); }
+  }catch(e){ loginErr(errServidor(e)); }
 };
 document.getElementById('regBtn').onclick = async () => {
   const c = credenciales(); if(!c) return;
@@ -194,7 +209,7 @@ document.getElementById('regBtn').onclick = async () => {
     if (!d.token){ loginErr(d.error || 'No se pudo crear'); return; }
     localStorage.setItem('token', d.token);
     location.reload();
-  }catch(e){ loginErr('Sin conexión al servidor.'); }
+  }catch(e){ loginErr(errServidor(e)); }
 };
 document.getElementById('pairBtn').onclick = async () => {
   const r = await api('/api/pair', { method: 'POST', body: JSON.stringify({ pcUsername: pcNameEl.value }) });
@@ -204,15 +219,15 @@ document.getElementById('pairBtn').onclick = async () => {
   else alert('Solicitud enviada a ' + d.pc + '. Espera a que el PC la acepte.');
   location.reload();
 };
-socket.on('solicitud-resuelta', async () => {
+if(socket) socket.on('solicitud-resuelta', async () => {
   const me = await sesion();
   if (me && me.pairedPc) { alert('✅ El PC ' + me.pairedPc + ' aceptó tu solicitud. Ya puedes enviar reportes.'); }
   location.reload();
 });
-socket.on('connect', async () => {
+if(socket) socket.on('connect', async () => {
   const me = await sesion();
   pintarSesion(me);
-  if (me) socket.emit('auth', localStorage.getItem('token'));
+  if (me) socketEmit('auth', localStorage.getItem('token'));
 });
 sesion().then(pintarSesion);
 
@@ -374,7 +389,7 @@ enviarBtn.addEventListener('click', async () => {
       actualizarFecha();
       navigator.vibrate && navigator.vibrate(100);
     } else alert('Error: ' + (data.error||'no se pudo enviar'));
-  }catch(e){ alert('Sin conexión al servidor. Revisa WiFi/internet.'); }
+  }catch(e){ alert(errServidor(e)); }
   enviarBtn.disabled = false; enviarBtn.textContent = '✅ FINALIZAR Y ENVIAR AL PC';
 });
 </script>

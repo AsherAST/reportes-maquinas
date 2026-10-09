@@ -3,6 +3,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const cors = require('cors');
 const { Server } = require('socket.io');
 const path = require('path');
 const fs = require('fs');
@@ -33,6 +34,7 @@ const USERS_FILE = path.join(__dirname, 'usuarios.json');
 const PAIRS_FILE = path.join(__dirname, 'pares.json');
 const SOLIC_FILE = path.join(__dirname, 'solicitudes.json');
 
+app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
