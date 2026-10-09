@@ -32,43 +32,109 @@
   <div class="codigo-grande" id="codigoShow">—</div>
 </header>
 <div class="wrap">
-  <p>1. Escribe un código de apareamiento (ej: <b>PLANTA-123</b>).<br>2. Escribe <b>el mismo código</b> en el celular.<br>3. Los reportes llegan solos aquí.</p>
-  <div class="pair">
-    <input id="codigo" placeholder="Código ej: PLANTA-123" style="flex:1;min-width:200px" />
-    <button id="conectar">🔗 Aparear</button>
-    <button id="exportar" class="sec">⬇️ Exportar CSV</button>
-    <button id="qr" class="sec">📱 Ver link móvil</button>
+  <div id="loginCard" style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:20px;max-width:420px">
+    <h2 style="margin-top:0">👤 Cuenta PC receptora</h2>
+    <p style="color:#64748b;font-size:14px">Entra con tu cuenta <b>PC</b>. Los celulares apareados a este nombre te envían sus reportes. Sin IPs.</p>
+    <label style="font-size:13px;color:#64748b">Usuario PC</label>
+    <input id="user" placeholder="Ej: oficina-1" style="width:100%;margin-bottom:8px" />
+    <label style="font-size:13px;color:#64748b">Clave</label>
+    <input id="pass" type="password" placeholder="••••" style="width:100%;margin-bottom:12px" />
+    <div class="pair">
+      <button id="loginBtn">Entrar</button>
+      <button id="regBtn" class="sec">Crear cuenta PC</button>
+    </div>
+    <details style="margin-top:8px;font-size:13px;color:#64748b">
+      <summary style="cursor:pointer">⚙️ Servidor (solo si usas la nube)</summary>
+      <input id="serverUrl" placeholder="Por defecto: esta misma página" style="width:100%;margin-top:6px" />
+      <div>Pega la URL nube y recarga. Vacío = servidor local.</div>
+    </details>
   </div>
-  <div id="linkMovil" style="display:none;background:#fff;padding:12px;border-radius:10px;margin-bottom:12px;word-break:break-all"></div>
+  <div id="dash" style="display:none">
+  <p>Comparte tu nombre de cuenta con los celulares: ellos escriben <b id="miNombre"></b> al aparearse.<br>Los reportes llegan solos aquí.</p>
+  <div class="pair">
+    <button id="exportar" class="sec">⬇️ Exportar CSV</button>
+    <button id="logoutBtn" class="sec">Salir</button>
+  </div>
   <div id="estado">Sin conectar</div>
   <div class="top"><h2 style="margin:8px 0">Reportes recibidos (<span id="count">0</span>)</h2></div>
   <div id="lista"></div>
   <small>Tip: deja esta página abierta. Suena una alerta al llegar un reporte.</small>
+  </div>
 </div>
 
 <script>
-const socket = io();
-const codigoEl = document.getElementById('codigo');
+function getServer(){
+  let s = (localStorage.getItem('serverUrl-pc') || '').trim();
+  if(!s) return '';
+  return s.replace(/\/$/, '');
+}
+const socket = io(getServer() || undefined);
+const serverUrlEl = document.getElementById('serverUrl');
+serverUrlEl.value = localStorage.getItem('serverUrl-pc') || '';
+serverUrlEl.addEventListener('change', () => {
+  let v = serverUrlEl.value.trim().replace(/\/$/, '');
+  if(v && !/^https?:\/\//i.test(v)) v = 'https://' + v;
+  localStorage.setItem('serverUrl-pc', v);
+  if(v){ alert('Servidor guardado. Recarga para conectar.'); location.reload(); }
+});
 const codigoShow = document.getElementById('codigoShow');
 const estadoEl = document.getElementById('estado');
 const listaEl = document.getElementById('lista');
 const countEl = document.getElementById('count');
-let CODIGO = localStorage.getItem('codigo-pc') || 'PLANTA-123';
-codigoEl.value = CODIGO;
+let YO = null;
 
-function conectar(){
-  CODIGO = codigoEl.value.toUpperCase().trim() || 'PLANTA-123';
-  localStorage.setItem('codigo-pc', CODIGO);
-  codigoShow.textContent = CODIGO;
-  socket.emit('unirse', CODIGO);
-  estadoEl.textContent = '✅ Apareado con código ' + CODIGO + ' — esperando reportes...';
-  cargarHistorial();
+function api(path, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers, { 'Content-Type': 'application/json' });
+  const t = localStorage.getItem('token-pc');
+  if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  return fetch(getServer() + path, opts);
 }
-document.getElementById('conectar').onclick = conectar;
+async function sesion() {
+  const t = localStorage.getItem('token-pc');
+  if (!t) return null;
+  try {
+    const r = await api('/api/auth/me');
+    if (!r.ok) { localStorage.removeItem('token-pc'); return null; }
+    const me = await r.json();
+    return me.role === 'pc' ? me : null;
+  } catch { return null; }
+}
+function pintarSesion(me) {
+  YO = me;
+  document.getElementById('loginCard').style.display = me ? 'none' : 'block';
+  document.getElementById('dash').style.display = me ? 'block' : 'none';
+  if (me) {
+    codigoShow.textContent = me.username;
+    document.getElementById('miNombre').textContent = me.username;
+    estadoEl.textContent = '✅ Conectado como ' + me.username + ' — esperando reportes...';
+    socket.emit('auth', localStorage.getItem('token-pc'));
+    cargarHistorial();
+  } else {
+    codigoShow.textContent = '—';
+    estadoEl.textContent = 'Entra con tu cuenta PC.';
+  }
+}
+document.getElementById('loginBtn').onclick = async () => {
+  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: document.getElementById('user').value, password: document.getElementById('pass').value }) });
+  const d = await r.json();
+  if (!d.token) return alert(d.error || 'No se pudo entrar');
+  if (d.role !== 'pc') return alert('Esa es cuenta de celular. Entra con una cuenta PC.');
+  localStorage.setItem('token-pc', d.token);
+  location.reload();
+};
+document.getElementById('regBtn').onclick = async () => {
+  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: document.getElementById('user').value, password: document.getElementById('pass').value, role: 'pc' }) });
+  const d = await r.json();
+  if (!d.token) return alert(d.error || 'No se pudo crear');
+  localStorage.setItem('token-pc', d.token);
+  location.reload();
+};
+document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token-pc'); location.reload(); };
 
 async function cargarHistorial(){
+  if(!YO) return;
   try{
-    const r = await fetch('/api/reportes/' + encodeURIComponent(CODIGO));
+    const r = await api('/api/reportes');
     const data = await r.json();
     // evita duplicados: reconstruye solo si cambió el conteo
     const ids = new Set([...listaEl.children].map(c => c.dataset.id));
@@ -106,9 +172,9 @@ function pintar(rep, esNuevo=false){
 
 function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 
-socket.on('connect', conectar);
+socket.on('connect', async () => { const me = await sesion(); pintarSesion(me); });
 socket.on('nuevo-reporte', (rep) => {
-  if(rep.codigo !== CODIGO) return;
+  if(!YO || rep.para !== YO.username) return;
   if([...listaEl.children].some(c => c.dataset.id === rep.id)) return;
   pintarConId(rep, true);
   estadoEl.textContent = '📩 Nuevo reporte de ' + rep.maquina + ' a las ' + rep.fechaHora;
@@ -118,21 +184,15 @@ socket.on('nuevo-reporte', (rep) => {
 if(Notification.permission === 'default') Notification.requestPermission();
 
 document.getElementById('exportar').onclick = async () => {
-  const r = await fetch('/api/reportes/' + encodeURIComponent(CODIGO));
+  const r = await api('/api/reportes');
   const data = await r.json();
   if(!data.length){ alert('No hay reportes'); return; }
-  const csv = 'fecha;maquina;operario;texto\n' + data.map(x=>`"${x.fechaHora}";"${x.maquina.replace(/"/g,'""')}";"${x.operario.replace(/"/g,'""')}";"${x.texto.replace(/"/g,'""').replace(/\n/g,' ')}"`).join('\n');
+  const csv = 'fecha;de;maquina;texto\n' + data.map(x=>`"${x.fechaHora}";"${(x.de||'').replace(/"/g,'""')}";"${x.maquina.replace(/"/g,'""')}";"${x.texto.replace(/"/g,'""').replace(/\n/g,' ')}"`).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob(["\ufeff"+csv],{type:'text/csv'}));
-  a.download = 'reportes-'+CODIGO+'.csv'; a.click();
+  a.download = 'reportes-'+YO.username+'.csv'; a.click();
 };
-document.getElementById('qr').onclick = () => {
-  const url = location.origin + '/movil.html';
-  const d = document.getElementById('linkMovil');
-  d.style.display = 'block';
-  d.innerHTML = `En el celular Android (Chrome) abre: <b>${url}</b><br>Y escribe el código: <b>${CODIGO}</b><br><br>📱 Para micrófono usa SIEMPRE la versión <b>https con puerto 3443</b>:<br><b>https://192.168.1.2:3443/movil.html</b>`;
-};
-conectar();
+sesion().then(pintarSesion);
 setInterval(cargarHistorial, 5000);
 </script>
 </body>

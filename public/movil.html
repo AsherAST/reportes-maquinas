@@ -38,17 +38,33 @@
   <input id="serverUrl" placeholder="https://tu-app.onrender.com" inputmode="url" />
   <div style="font-size:11px;color:#64748b;margin-top:4px">Pégala una vez y queda guardada. Así funciona fuera de tu WiFi.</div>
 
-  <label>Código de apareamiento (igual que en el PC)</label>
-  <input id="codigo" placeholder="Ej: PLANTA-123" value="" maxlength="20" />
+  <div class="card" id="authCard">
+    <div style="font-weight:800;margin-bottom:8px">👤 Cuenta de celular</div>
+    <div id="authForm">
+      <label>Usuario</label>
+      <input id="user" placeholder="Ej: juan.op" maxlength="20" />
+      <label>Clave</label>
+      <input id="pass" type="password" placeholder="••••" />
+      <div class="row" style="margin-top:10px">
+        <button id="loginBtn" style="padding:12px;border-radius:10px;border:none;background:#22c55e;color:#052e16;font-weight:800;cursor:pointer">Entrar</button>
+        <button id="regBtn" style="padding:12px;border-radius:10px;border:1px solid #38bdf8;background:transparent;color:#fff;font-weight:700;cursor:pointer">Crear cuenta</button>
+      </div>
+    </div>
+    <div id="authInfo" style="display:none;font-size:14px"></div>
+  </div>
+
+  <div class="card" id="pairCard" style="display:none">
+    <div style="font-weight:800;margin-bottom:8px">🔗 Aparear con PC</div>
+    <label>Nombre de la cuenta PC</label>
+    <input id="pcName" placeholder="Ej: oficina-1" maxlength="20" />
+    <button id="pairBtn" style="width:100%;margin-top:10px;padding:12px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-weight:800;cursor:pointer">Aparearse con este PC</button>
+    <div id="pairInfo" style="font-size:13px;color:#93c5fd;margin-top:6px"></div>
+  </div>
 
   <div class="row">
     <div style="flex:1">
       <label>Máquina / Equipo</label>
       <input id="maquina" placeholder="Ej: Torno 3, Compresor..." />
-    </div>
-    <div style="flex:1">
-      <label>Operario</label>
-      <input id="operario" placeholder="Tu nombre" />
     </div>
   </div>
 
@@ -89,29 +105,77 @@ serverUrlEl.addEventListener('change', () => {
   if(v){ alert('Servidor guardado. Recarga la página para conectar a la nube.'); location.reload(); }
 });
 if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }
-const codigoEl = document.getElementById('codigo');
 const maquinaEl = document.getElementById('maquina');
-const operarioEl = document.getElementById('operario');
+const userEl = document.getElementById('user');
+const passEl = document.getElementById('pass');
+const pcNameEl = document.getElementById('pcName');
+
+// --- Cuentas ---
+function api(path, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers, { 'Content-Type': 'application/json' });
+  const t = localStorage.getItem('token');
+  if (t) opts.headers['Authorization'] = 'Bearer ' + t;
+  return fetch(getServer() + path, opts);
+}
+async function sesion() {
+  const t = localStorage.getItem('token');
+  if (!t) return null;
+  try {
+    const r = await api('/api/auth/me');
+    if (!r.ok) { localStorage.removeItem('token'); return null; }
+    return await r.json();
+  } catch { return null; }
+}
+function pintarSesion(me) {
+  const form = document.getElementById('authForm');
+  const info = document.getElementById('authInfo');
+  const pairCard = document.getElementById('pairCard');
+  if (!me) { form.style.display = 'block'; info.style.display = 'none'; pairCard.style.display = 'none'; return; }
+  form.style.display = 'none'; info.style.display = 'block'; pairCard.style.display = 'block';
+  info.innerHTML = `✅ <b>${esc(me.username)}</b> <button id="logoutBtn" style="margin-left:8px;background:none;border:1px solid #64748b;color:#94a3b8;border-radius:8px;padding:2px 8px;cursor:pointer">salir</button>`;
+  document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('token'); location.reload(); };
+  const pi = document.getElementById('pairInfo');
+  if (me.pairedPc) { pi.textContent = '🔗 Apareado con PC: ' + me.pairedPc; pcNameEl.value = me.pairedPc; }
+  else pi.textContent = 'Sin aparear. Escribe la cuenta PC y aparea.';
+  socket.emit('auth', localStorage.getItem('token'));
+}
+function esc(s){ return (s||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+document.getElementById('loginBtn').onclick = async () => {
+  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ username: userEl.value, password: passEl.value }) });
+  const d = await r.json();
+  if (!d.ok && !d.token) return alert(d.error || 'No se pudo entrar');
+  if (d.role !== 'movil') return alert('Esa es cuenta de PC. Crea una cuenta de celular.');
+  localStorage.setItem('token', d.token);
+  location.reload();
+};
+document.getElementById('regBtn').onclick = async () => {
+  const r = await api('/api/auth/register', { method: 'POST', body: JSON.stringify({ username: userEl.value, password: passEl.value, role: 'movil' }) });
+  const d = await r.json();
+  if (!d.token) return alert(d.error || 'No se pudo crear');
+  localStorage.setItem('token', d.token);
+  location.reload();
+};
+document.getElementById('pairBtn').onclick = async () => {
+  const r = await api('/api/pair', { method: 'POST', body: JSON.stringify({ pcUsername: pcNameEl.value }) });
+  const d = await r.json();
+  if (!d.ok) return alert(d.error || 'No se pudo aparear');
+  alert('Apareado con PC: ' + d.pairedPc);
+  location.reload();
+};
+socket.on('connect', async () => {
+  const me = await sesion();
+  pintarSesion(me);
+  if (me) socket.emit('auth', localStorage.getItem('token'));
+});
+sesion().then(pintarSesion);
+
+// recordar máquina (ya cargada arriba)
 const textoEl = document.getElementById('texto');
 const micBtn = document.getElementById('micBtn');
 const permisoBtn = document.getElementById('permisoBtn');
 const enviarBtn = document.getElementById('enviarBtn');
 const estadoEl = document.getElementById('estado');
 const fechaEl = document.getElementById('fechaHora');
-
-// recordar código
-codigoEl.value = localStorage.getItem('codigo') || '';
-maquinaEl.value = localStorage.getItem('maquina') || '';
-operarioEl.value = localStorage.getItem('operario') || '';
-codigoEl.addEventListener('change', () => {
-  localStorage.setItem('codigo', codigoEl.value.toUpperCase().trim());
-  unirse();
-});
-function unirse(){
-  const c = codigoEl.value.toUpperCase().trim();
-  if(c) socket.emit('unirse', c);
-}
-socket.on('connect', unirse);
 
 function actualizarFecha(){
   fechaEl.textContent = '🕒 ' + new Date().toLocaleString('es-CO',{dateStyle:'full', timeStyle:'short'});
@@ -212,14 +276,13 @@ if(!SR){
 
 async function iniciar(){
   if(!SR) return;
-  const c = codigoEl.value.trim();
-  if(!c){ alert('Escribe el código de apareamiento primero'); codigoEl.focus(); return; }
+  const me = await sesion();
+  if(!me){ alert('Entra a tu cuenta primero'); return; }
+  if(!me.pairedPc){ alert('Aparea con una cuenta PC primero (ej: oficina-1)'); pcNameEl.focus(); return; }
   // 1. pide permiso explícito siempre antes de escuchar -> esto obliga a que Chrome pregunte
   const ok = await pedirPermisoMicro();
   if(!ok) return;
-  localStorage.setItem('codigo', c.toUpperCase());
   localStorage.setItem('maquina', maquinaEl.value);
-  localStorage.setItem('operario', operarioEl.value);
   baseInicial = textoEl.value || '';
   acumuladoSesiones = '';
   try{ rec.start(); escuchando = true;
@@ -243,16 +306,15 @@ micBtn.addEventListener('click', () => { escuchando ? detener() : iniciar(); });
 // --- Enviar ---
 enviarBtn.addEventListener('click', async () => {
   detener();
-  const codigo = codigoEl.value.toUpperCase().trim();
   let texto = limpiarRepeticiones(textoEl.value.trim());
   textoEl.value = texto;
-  if(!codigo){ alert('Falta código de apareamiento'); return; }
   if(!texto){ alert('No hay texto para enviar. Habla o escribe primero.'); return; }
   enviarBtn.disabled = true; enviarBtn.textContent = 'Enviando...';
   try{
+    const t = localStorage.getItem('token');
     const r = await fetch(getServer() + '/api/reportes', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ codigo, maquina: maquinaEl.value, operario: operarioEl.value, texto })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+t},
+      body: JSON.stringify({ maquina: maquinaEl.value, texto })
     });
     const data = await r.json();
     if(data.ok){

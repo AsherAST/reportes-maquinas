@@ -1,8 +1,11 @@
 node_modules/
 reportes.json
+usuarios.json
+pares.json
 *.log
 key.pem
 cert.pem
 android/app/build/
 android/.gradle/
+dist/
 .DS_Store
