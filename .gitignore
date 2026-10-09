@@ -2,6 +2,7 @@ node_modules/
 reportes.json
 usuarios.json
 pares.json
+solicitudes.json
 *.log
 key.pem
 cert.pem
