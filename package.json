@@ -27,7 +27,8 @@
       "target": "nsis"
     },
     "nsis": {
-      "include": "build/installer.nsh"
+      "include": "build/installer.nsh",
+      "perMachine": true
     }
   },
   "dependencies": {
